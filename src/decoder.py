@@ -129,9 +129,14 @@ class MessageDecoder:
                         if key in json_data and key not in fields:
                             fields[key] = json_data[key]
                     
+                    # Try to get channel from JSON data first, then fall back to topic extraction
+                    channel = json_data.get('channel', None)
+                    if not channel:
+                        channel = self._extract_channel_from_topic(mqtt_topic)
+                    
                     return DecodedMessage(
                         packet_type=packet_type,
-                        channel=self._extract_channel_from_topic(mqtt_topic),
+                        channel=channel,
                         from_node=from_node,
                         to_node=to_node,
                         timestamp=datetime.now(),
@@ -194,7 +199,15 @@ class MessageDecoder:
                 # Encrypted - attempt to decrypt
                 if channel in self._decoded_keys:
                     try:
-                        decrypted_bytes = self._decrypt_payload(mesh_packet.encrypted, channel)
+                        # Pass packet ID and from node ID for nonce construction
+                        packet_id = getattr(mesh_packet, 'id')
+                        from_node_id = getattr(mesh_packet, 'from')
+                        decrypted_bytes = self._decrypt_payload(
+                            mesh_packet.encrypted, 
+                            channel, 
+                            packet_id, 
+                            from_node_id
+                        )
                         if decrypted_bytes:
                             data_msg = mesh_pb2.Data()
                             data_msg.ParseFromString(decrypted_bytes)
@@ -268,15 +281,19 @@ class MessageDecoder:
                 error=str(e),
             )
 
-    def _decrypt_payload(self, encrypted_data: bytes, channel: str) -> Optional[bytes]:
+    def _decrypt_payload(self, encrypted_data: bytes, channel: str, packet_id: int, from_node_id: int) -> Optional[bytes]:
         """
         Decrypt message payload using channel-specific key.
         
-        Uses AES-128-CTR cipher with nonce from packet header.
+        Uses AES-CTR cipher with nonce constructed from packet metadata.
+        The nonce is NOT embedded in the encrypted payload - it must be
+        constructed from the packet's ID and from node ID.
         
         Args:
-            encrypted_data: Encrypted payload bytes
+            encrypted_data: Encrypted payload bytes (ciphertext only, no nonce)
             channel: Channel name to get decryption key
+            packet_id: Packet ID from MeshPacket
+            from_node_id: From node ID from MeshPacket
             
         Returns:
             Decrypted payload bytes, or None if decryption fails
@@ -288,30 +305,40 @@ class MessageDecoder:
         key = self._decoded_keys[channel]
         
         try:
-            # Meshtastic uses AES-128-CTR
-            # The nonce is derived from packet ID and other metadata
-            # For simplicity, we'll try to decrypt assuming standard format
+            # Handle key padding for special cases
+            # 1-byte keys (0x01) are expanded to the default Meshtastic key
+            if len(key) == 1 and key[0] == 0x01:
+                # Default Meshtastic key for "AQ=="
+                key = base64.b64decode("1PG7OiApB1nwvP+rz05pAQ==")
+            elif len(key) < 16:
+                # Pad short keys to 16 bytes with zeros
+                key = key + b'\x00' * (16 - len(key))
+            elif 16 < len(key) < 32:
+                # Pad to 32 bytes for AES-256
+                key = key + b'\x00' * (32 - len(key))
+            elif len(key) > 32:
+                # Truncate to 32 bytes
+                key = key[:32]
             
-            # Extract nonce (first 16 bytes) and ciphertext
-            if len(encrypted_data) < 16:
-                return None
+            # Construct nonce from packet metadata (16 bytes total)
+            # First 8 bytes: packet ID as little-endian
+            # Last 8 bytes: from node ID as little-endian
+            nonce_packet_id = packet_id.to_bytes(8, "little")
+            nonce_from_node = from_node_id.to_bytes(8, "little")
+            nonce = nonce_packet_id + nonce_from_node
             
-            nonce = encrypted_data[:8]
-            # Pad nonce to 16 bytes for CTR mode
-            nonce_padded = nonce + b'\x00' * 8
+            logger.debug(f"Decrypting with packet_id={packet_id}, from_node={from_node_id:08x}, key_len={len(key)}")
             
-            ciphertext = encrypted_data[8:]
-            
-            # Create cipher
+            # Create cipher (entire encrypted_data is ciphertext, no nonce prefix)
             cipher = Cipher(
                 algorithms.AES(key),
-                modes.CTR(nonce_padded),
+                modes.CTR(nonce),
                 backend=default_backend()
             )
             decryptor = cipher.decryptor()
             
             # Decrypt
-            plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+            plaintext = decryptor.update(encrypted_data) + decryptor.finalize()
             
             return plaintext
             
@@ -340,26 +367,38 @@ class MessageDecoder:
             if part in ['e', 'c', 'json', 'stat']:
                 # Channel name is the part right after the type
                 if i + 1 < len(parts):
-                    return parts[i + 1]
+                    channel = parts[i + 1]
+                    logger.debug(f"Extracted channel '{channel}' from topic '{topic}' (found type '{part}' at position {i})")
+                    return channel
+                else:
+                    logger.debug(f"Found type '{part}' at position {i} but no channel name after it in topic '{topic}'")
                 break
             elif part == 'map':
                 # For map reports, if there's a part after 'map', use it
                 # Otherwise, look for the channel name before the channel number
                 if i + 1 < len(parts):
-                    return parts[i + 1]
+                    channel = parts[i + 1]
+                    logger.debug(f"Extracted channel '{channel}' from map topic '{topic}'")
+                    return channel
                 # Try to find channel name before the number (e.g., msh/US/FL/thevillages/2/map)
                 # The pattern is usually: msh/REGION/AREA/NETWORK/NUM/map
                 # So we want the NETWORK part (parts[3] in this case)
                 if i >= 2 and parts[i-1].isdigit():
                     # The part before the number might be the network/channel name
                     if i >= 3:
-                        return parts[i-2]  # Get the part before the channel number
+                        channel = parts[i-2]
+                        logger.debug(f"Extracted channel '{channel}' from map topic '{topic}' (before channel number)")
+                        return channel
+                logger.debug(f"Using 'map' as channel for topic '{topic}'")
                 return "map"  # Fallback to "map" as the channel name
         
         # Fallback: try to get a reasonable channel identifier
         if len(parts) >= 5:
-            return parts[4]
+            channel = parts[4]
+            logger.debug(f"Using fallback channel '{channel}' (parts[4]) from topic '{topic}'")
+            return channel
         
+        logger.warning(f"Could not extract channel from topic '{topic}', parts: {parts}")
         return "unknown"
 
     def _identify_packet_type(self, data_msg: mesh_pb2.Data) -> str:

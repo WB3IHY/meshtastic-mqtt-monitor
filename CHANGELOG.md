@@ -24,6 +24,22 @@ Changes are grouped into the following categories:
 
 ---
 
+## [0.2.0] - 2026-01-20
+
+### Fixed
+- **Meshtastic Decryption**: Corrected nonce construction to use packet metadata (packet ID + from node ID) instead of extracting from encrypted payload, following official Meshtastic encryption format
+- **Channel Extraction**: Fixed channel extraction for JSON messages by checking the JSON data for channel field before falling back to topic parsing
+- **Key Padding**: Added proper key padding logic for 1-byte keys (AQ==) that expand to default Meshtastic key
+
+### Changed
+- Updated `_decrypt_payload()` method to accept packet_id and from_node_id parameters for proper nonce construction
+- Enhanced channel extraction with debug logging to help troubleshoot topic parsing issues
+- Improved integration tests to use correct encryption format with proper nonce construction
+
+### Added
+- Debug logging for channel extraction showing topic parsing details
+- Support for extracting channel from JSON message data when not present in topic
+
 ## [0.1.0] - 2024-11-15
 
 ### Added
@@ -43,4 +59,5 @@ Changes are grouped into the following categories:
 - Graceful shutdown handling with SIGINT/SIGTERM support
 - Version information display via --version flag and startup output
 
+[0.2.0]: https://github.com/meshtastic/meshtastic-mqtt-monitor/releases/tag/v0.2.0
 [0.1.0]: https://github.com/meshtastic/meshtastic-mqtt-monitor/releases/tag/v0.1.0

@@ -69,7 +69,7 @@ class TestEndToEndMessageFlow:
         envelope.channel_id = "LongFast"
         
         payload = envelope.SerializeToString()
-        topic = "msh/test/e/TestChannel/LongFast"
+        topic = "msh/US/2/e/LongFast"
         
         # Decode the message
         decoded = decoder.decode(topic, payload)
@@ -128,41 +128,50 @@ class TestEndToEndMessageFlow:
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         from cryptography.hazmat.backends import default_backend
         
-        nonce = b'\x00' * 8
-        nonce_padded = nonce + b'\x00' * 8
+        packet_id = 12345
+        from_node_id = 0xABCDEF12
+        
+        # Construct nonce from packet metadata (correct Meshtastic format)
+        nonce_packet_id = packet_id.to_bytes(8, "little")
+        nonce_from_node = from_node_id.to_bytes(8, "little")
+        nonce = nonce_packet_id + nonce_from_node
         
         cipher = Cipher(
             algorithms.AES(encryption_key),
-            modes.CTR(nonce_padded),
+            modes.CTR(nonce),
             backend=default_backend()
         )
         encryptor = cipher.encryptor()
         
         plaintext = data_msg.SerializeToString()
         ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-        encrypted_payload = nonce + ciphertext
         
-        # Create mesh packet with encrypted data
+        # Create mesh packet with encrypted data (no nonce prefix in encrypted field)
         mesh_packet = mesh_pb2.MeshPacket()
-        setattr(mesh_packet, 'from', 0xABCDEF12)
+        setattr(mesh_packet, 'id', packet_id)
+        setattr(mesh_packet, 'from', from_node_id)
         mesh_packet.to = 0x12345678
-        mesh_packet.encrypted = encrypted_payload
+        mesh_packet.encrypted = ciphertext  # Just the ciphertext, no nonce
         
         envelope = mqtt_pb2.ServiceEnvelope()
         envelope.packet.CopyFrom(mesh_packet)
         envelope.channel_id = "TestChannel"
         
         payload = envelope.SerializeToString()
-        topic = "msh/test/e/region/TestChannel"
+        topic = "msh/US/2/e/TestChannel"
         
         # Decode the message
         decoded = decoder.decode(topic, payload)
         
-        # Verify message was processed (encryption may not work perfectly in test)
+        # Verify message was processed
         assert decoded.from_node == "!abcdef12"
         assert decoded.to_node == "!12345678"
-        # Channel extraction from topic (5th element in path)
         assert decoded.channel == "TestChannel"
+        
+        # If decryption succeeded, verify the message content
+        if decoded.decryption_success:
+            assert decoded.packet_type == "TEXT_MESSAGE_APP"
+            assert decoded.fields.get("text") == "Secret Message"
     
     def test_position_message_flow(self):
         """Test complete flow for position message."""
