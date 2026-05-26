@@ -7,7 +7,6 @@ from typing import Dict, List, Optional
 
 import yaml
 
-
 # Hardware model mapping (number to name)
 # Based on Meshtastic protobuf HardwareModel enum
 HARDWARE_MODELS = {
@@ -142,6 +141,18 @@ class KeywordConfig:
     color: str = "white"
 
 
+# --- ADDED ---
+@dataclass
+class DatabaseConfig:
+    """Node database configuration."""
+
+    enabled: bool = False
+    path: str = "nodes.db"
+    keep_position_history: bool = True
+    keep_telemetry_history: bool = True
+# --- END ADDED ---
+
+
 @dataclass
 class MonitorConfig:
     """Complete monitor application configuration."""
@@ -154,9 +165,10 @@ class MonitorConfig:
     colors: ColorConfig = field(default_factory=ColorConfig)
     keywords: List[KeywordConfig] = field(default_factory=list)
     hardware_models: Dict[int, str] = field(default_factory=lambda: HARDWARE_MODELS.copy())
-    filter_type: Optional[str] = None  # Filter to specific packet type
-    filter_text: Optional[str] = None  # Filter messages containing text (grep-like)
-    hide_decode_errors: bool = False  # Hide messages that failed to decode
+    filter_type: Optional[str] = None       # Filter to specific packet type
+    filter_text: Optional[str] = None       # Filter messages containing text (grep-like)
+    hide_decode_errors: bool = False        # Hide messages that failed to decode
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)  # --- ADDED ---
 
 
 class ConfigManager:
@@ -168,53 +180,40 @@ class ConfigManager:
     def get_default_config() -> MonitorConfig:
         """Generate default configuration with standard values."""
         config = MonitorConfig()
-        
+
         # Set default display fields for common packet types
         config.display_fields = {
             # Position/Location data
             "POSITION": ["latitude", "longitude", "altitude", "timestamp"],
             "POSITION_APP": ["latitude", "longitude", "altitude", "timestamp"],
-            
             # Text messaging
             "TEXT_MESSAGE_APP": ["text", "timestamp"],
-            
             # Telemetry data
             "TELEMETRY_APP": ["battery_level", "voltage", "temperature", "channel_utilization", "air_util_tx"],
-            
             # Node information
             "NODEINFO_APP": ["node_id", "long_name", "short_name", "hardware_model", "role"],
-            
             # Routing information
             "ROUTING_APP": ["route_request", "route_reply", "error_reason"],
-            
             # Administrative messages
             "ADMIN_APP": ["admin_message"],
-            
             # Waypoint data
             "WAYPOINT_APP": ["name", "description", "latitude", "longitude"],
-            
             # Neighbor info
             "NEIGHBORINFO_APP": ["node_id", "snr", "node_broadcast_interval_secs"],
-            
             # Traceroute
             "TRACEROUTE_APP": ["route"],
-            
             # Detection sensor
             "DETECTION_SENSOR_APP": ["name", "timestamp"],
-            
             # Range test
             "RANGE_TEST_APP": ["seq", "timestamp"],
-            
             # Store and forward
             "STORE_FORWARD_APP": ["rr", "stats", "history", "heartbeat"],
-            
             # Remote hardware
             "REMOTE_HARDWARE_APP": ["type", "gpio_pin", "gpio_value"],
-            
             # Paxcounter
             "PAXCOUNTER_APP": ["wifi", "ble"],
         }
-        
+
         # Set default colors for packet types
         # Colors chosen to be visible on both light and dark terminals
         config.colors.packet_type_colors = {
@@ -235,7 +234,7 @@ class ConfigManager:
             "PAXCOUNTER_APP": "yellow",
             "default": "white",
         }
-        
+
         # Set default keyword highlights (examples - users can add their own)
         # Using bold colors for better visibility on both light and dark terminals
         config.keywords = [
@@ -244,30 +243,34 @@ class ConfigManager:
             KeywordConfig(keyword="error", case_sensitive=False, color="red"),
             KeywordConfig(keyword="warning", case_sensitive=False, color="yellow"),
         ]
-        
+
         # Build keyword highlights dict from keywords list
         config.colors.keyword_highlights = {kw.keyword: kw.color for kw in config.keywords}
-        
+
         # Set default encryption keys for common channels
         config.channel_keys = {
             "LongFast": "AQ==",  # Default Meshtastic encryption key
         }
-        
+
+        # --- ADDED: default database config (disabled by default) ---
+        config.database = DatabaseConfig()
+        # --- END ADDED ---
+
         return config
 
     @staticmethod
     def load_config(file_path: str = DEFAULT_CONFIG_PATH) -> MonitorConfig:
         """
         Load configuration from YAML file.
-        
+
         If the file doesn't exist, creates a default configuration file.
-        
+
         Args:
             file_path: Path to the configuration file
-            
+
         Returns:
             MonitorConfig object with loaded configuration
-            
+
         Raises:
             ValueError: If the configuration file is invalid
         """
@@ -277,16 +280,16 @@ class ConfigManager:
             ConfigManager._save_config(default_config, file_path)
             print(f"Created default configuration file at {file_path}")
             return default_config
-        
+
         try:
             with open(file_path, "r") as f:
                 config_data = yaml.safe_load(f)
-            
+
             if config_data is None:
                 config_data = {}
-            
+
             return ConfigManager._parse_config(config_data)
-        
+
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid YAML in configuration file: {e}")
         except Exception as e:
@@ -295,6 +298,7 @@ class ConfigManager:
     @staticmethod
     def _parse_config(config_data: dict) -> MonitorConfig:
         """Parse configuration dictionary into MonitorConfig object."""
+
         # Parse MQTT configuration
         mqtt_data = config_data.get("mqtt", {})
         mqtt_config = MQTTConfig(
@@ -305,12 +309,12 @@ class ConfigManager:
             use_tls=mqtt_data.get("use_tls", False),
             ca_cert=mqtt_data.get("ca_cert"),
         )
-        
+
         # Parse monitoring configuration
         monitoring_data = config_data.get("monitoring", {})
         topic = monitoring_data.get("topic", "msh/US/2/e/#")
         channels = monitoring_data.get("channels")
-        
+
         # Parse encryption configuration
         encryption_data = config_data.get("encryption", {})
         channel_configs = encryption_data.get("channels", [])
@@ -318,15 +322,15 @@ class ConfigManager:
         for ch in channel_configs:
             if isinstance(ch, dict) and "name" in ch:
                 channel_keys[ch["name"]] = ch.get("key", "")
-        
+
         # Parse display configuration
         display_data = config_data.get("display", {})
         display_fields = display_data.get("fields", {})
-        
+
         # Parse color configuration
         colors_data = config_data.get("colors", {})
         packet_type_colors = colors_data.get("packet_types", {})
-        
+
         # Parse keyword configuration
         keywords_data = colors_data.get("keywords", [])
         keywords = []
@@ -339,15 +343,25 @@ class ConfigManager:
                         color=kw.get("color", "white"),
                     )
                 )
-        
+
         # Build keyword highlights dict
         keyword_highlights = {kw.keyword: kw.color for kw in keywords}
-        
+
         color_config = ColorConfig(
             packet_type_colors=packet_type_colors,
             keyword_highlights=keyword_highlights,
         )
-        
+
+        # --- ADDED: Parse database configuration ---
+        db_data = config_data.get("database", {})
+        database_config = DatabaseConfig(
+            enabled=db_data.get("enabled", False),
+            path=db_data.get("path", "nodes.db"),
+            keep_position_history=db_data.get("keep_position_history", True),
+            keep_telemetry_history=db_data.get("keep_telemetry_history", True),
+        )
+        # --- END ADDED ---
+
         # Create and return MonitorConfig
         config = MonitorConfig(
             mqtt=mqtt_config,
@@ -357,19 +371,20 @@ class ConfigManager:
             display_fields=display_fields,
             colors=color_config,
             keywords=keywords,
+            database=database_config,  # --- ADDED ---
         )
-        
+
         # Apply defaults for missing display fields
         default_config = ConfigManager.get_default_config()
         for packet_type, fields in default_config.display_fields.items():
             if packet_type not in config.display_fields:
                 config.display_fields[packet_type] = fields
-        
+
         # Apply defaults for missing colors
         for packet_type, color in default_config.colors.packet_type_colors.items():
             if packet_type not in config.colors.packet_type_colors:
                 config.colors.packet_type_colors[packet_type] = color
-        
+
         return config
 
     @staticmethod
@@ -389,6 +404,14 @@ class ConfigManager:
                 "topic": config.topic,
                 "channels": config.channels,
             },
+            # --- ADDED: persist database config ---
+            "database": {
+                "enabled": config.database.enabled,
+                "path": config.database.path,
+                "keep_position_history": config.database.keep_position_history,
+                "keep_telemetry_history": config.database.keep_telemetry_history,
+            },
+            # --- END ADDED ---
             "encryption": {
                 "channels": [
                     {"name": name, "key": key}
@@ -410,7 +433,7 @@ class ConfigManager:
                 ],
             },
         }
-        
+
         with open(file_path, "w") as f:
             yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
 
@@ -418,45 +441,51 @@ class ConfigManager:
     def validate_config(config: MonitorConfig) -> bool:
         """
         Validate configuration for correctness.
-        
+
         Args:
             config: Configuration to validate
-            
+
         Returns:
             True if configuration is valid
-            
+
         Raises:
             ValueError: If configuration is invalid
         """
         # Validate MQTT configuration
         if not config.mqtt.host:
             raise ValueError("MQTT host cannot be empty")
-        
+
         if config.mqtt.port < 1 or config.mqtt.port > 65535:
             raise ValueError(f"Invalid MQTT port: {config.mqtt.port}")
-        
+
         # Validate topic
         if not config.topic:
             raise ValueError("MQTT topic cannot be empty")
-        
+
         # Validate encryption keys (basic check for base64 format)
         for channel_name, key in config.channel_keys.items():
             if key and not isinstance(key, str):
                 raise ValueError(f"Invalid encryption key for channel {channel_name}")
-        
+
+        # --- ADDED: Validate database configuration ---
+        if config.database.enabled:
+            if not config.database.path:
+                raise ValueError("Database path cannot be empty when database is enabled")
+        # --- END ADDED ---
+
         return True
 
     @staticmethod
     def merge_cli_args(config: MonitorConfig, args: argparse.Namespace) -> MonitorConfig:
         """
         Merge command-line arguments into configuration.
-        
+
         CLI arguments override configuration file values.
-        
+
         Args:
             config: Base configuration from file
             args: Parsed command-line arguments
-            
+
         Returns:
             Updated MonitorConfig with CLI overrides applied
         """
@@ -473,13 +502,13 @@ class ConfigManager:
             config.mqtt.use_tls = args.use_tls
         if hasattr(args, "ca_cert") and args.ca_cert:
             config.mqtt.ca_cert = args.ca_cert
-        
+
         # Override monitoring settings
         if hasattr(args, "topic") and args.topic:
             config.topic = args.topic
         if hasattr(args, "channels") and args.channels:
             config.channels = [ch.strip() for ch in args.channels.split(",")]
-        
+
         # Override color settings for specific packet types
         color_mappings = {
             "color_position": "POSITION",
@@ -489,13 +518,12 @@ class ConfigManager:
             "color_routing_app": "ROUTING_APP",
             "color_admin_app": "ADMIN_APP",
         }
-        
         for arg_name, packet_type in color_mappings.items():
             if hasattr(args, arg_name):
                 color_value = getattr(args, arg_name)
                 if color_value:
                     config.colors.packet_type_colors[packet_type] = color_value
-        
+
         # Handle keyword highlighting from --highlight arguments
         if hasattr(args, "highlight") and args.highlight:
             for highlight_spec in args.highlight:
@@ -504,10 +532,10 @@ class ConfigManager:
                     keyword, color = highlight_spec.split(":", 1)
                     keyword = keyword.strip()
                     color = color.strip()
-                    
+
                     # Add to keyword highlights
                     config.colors.keyword_highlights[keyword] = color
-                    
+
                     # Add to keywords list if not already present
                     if not any(kw.keyword == keyword for kw in config.keywords):
                         config.keywords.append(
@@ -519,7 +547,7 @@ class ConfigManager:
                             if kw.keyword == keyword:
                                 kw.color = color
                                 break
-        
+
         # Handle filter options
         if hasattr(args, "filter_type") and args.filter_type:
             config.filter_type = args.filter_type
@@ -527,14 +555,27 @@ class ConfigManager:
             config.filter_text = args.filter_text
         if hasattr(args, "hide_decode_errors") and args.hide_decode_errors:
             config.hide_decode_errors = args.hide_decode_errors
-        
+
+        # --- ADDED: Override database settings from CLI ---
+        if hasattr(args, "db_enable") and args.db_enable:
+            config.database.enabled = True
+        if hasattr(args, "db_path") and args.db_path:
+            config.database.path = args.db_path
+            # Implicitly enable the database if a path was explicitly given
+            config.database.enabled = True
+        if hasattr(args, "db_no_position_history") and args.db_no_position_history:
+            config.database.keep_position_history = False
+        if hasattr(args, "db_no_telemetry_history") and args.db_no_telemetry_history:
+            config.database.keep_telemetry_history = False
+        # --- END ADDED ---
+
         return config
 
     @staticmethod
     def create_argument_parser() -> argparse.ArgumentParser:
         """
         Create command-line argument parser with all configuration options.
-        
+
         Returns:
             Configured ArgumentParser instance
         """
@@ -545,33 +586,42 @@ class ConfigManager:
 Examples:
   # Use default configuration
   meshtastic-monitor
-  
+
   # Override MQTT connection
   meshtastic-monitor --host mqtt.example.com --port 8883 --use-tls
-  
+
   # Monitor specific topic and channels
   meshtastic-monitor --topic "msh/US/#" --channels "LongFast,Primary"
-  
+
   # Override packet type colors
   meshtastic-monitor --color-position red --color-text-message-app green_bold
-  
+
   # Add keyword highlighting
   meshtastic-monitor --highlight emergency:red_bold --highlight test:cyan
-  
+
   # Filter to only show text messages
   meshtastic-monitor --filter-type TEXT_MESSAGE_APP
-  
+
   # Filter to only show messages containing "weather"
   meshtastic-monitor --filter-text weather
-  
+
   # Combine filters: only position messages containing "checkpoint"
   meshtastic-monitor --filter-type POSITION --filter-text checkpoint
-  
+
   # Hide decode errors to reduce noise
   meshtastic-monitor --hide-decode-errors
-            """,
+
+  # Enable node database (saved to nodes.db by default)
+  meshtastic-monitor --db-enable
+
+  # Enable node database with a custom path
+  meshtastic-monitor --db-path /var/lib/mesh/nodes.db
+
+  # Enable database but skip history tables to save disk space
+  meshtastic-monitor --db-enable --db-no-position-history --db-no-telemetry-history
+""",
         )
-        
+
         # Version flag
         parser.add_argument(
             "--version",
@@ -580,7 +630,7 @@ Examples:
             version=f"%(prog)s {__import__('src').__version__}",
             help="Show version information and exit",
         )
-        
+
         # Configuration file
         parser.add_argument(
             "--config",
@@ -589,7 +639,7 @@ Examples:
             default="config.yaml",
             help="Path to configuration file (default: config.yaml)",
         )
-        
+
         # MQTT connection parameters
         mqtt_group = parser.add_argument_group("MQTT Connection")
         mqtt_group.add_argument(
@@ -622,7 +672,7 @@ Examples:
             type=str,
             help="Path to CA certificate file for TLS",
         )
-        
+
         # Monitoring parameters
         monitor_group = parser.add_argument_group("Monitoring")
         monitor_group.add_argument(
@@ -635,7 +685,7 @@ Examples:
             type=str,
             help="Comma-separated list of channels to monitor (overrides config file)",
         )
-        
+
         # Color configuration
         color_group = parser.add_argument_group("Color Configuration")
         color_group.add_argument(
@@ -674,7 +724,7 @@ Examples:
             metavar="COLOR",
             help="Color for ADMIN_APP packet type",
         )
-        
+
         # Keyword highlighting
         color_group.add_argument(
             "--highlight",
@@ -683,7 +733,7 @@ Examples:
             metavar="KEYWORD:COLOR",
             help="Add keyword highlighting (format: keyword:color, e.g., emergency:red_bold). Can be used multiple times.",
         )
-        
+
         # Filtering options
         filter_group = parser.add_argument_group("Filtering")
         filter_group.add_argument(
@@ -703,5 +753,30 @@ Examples:
             action="store_true",
             help="Hide messages that failed to decode (reduces noise from malformed packets)",
         )
-        
+
+        # --- ADDED: Node database options ---
+        db_group = parser.add_argument_group("Node Database")
+        db_group.add_argument(
+            "--db-enable",
+            action="store_true",
+            help="Enable the node database (overrides config file)",
+        )
+        db_group.add_argument(
+            "--db-path",
+            type=str,
+            metavar="PATH",
+            help="Path to the SQLite node database file (also enables the database)",
+        )
+        db_group.add_argument(
+            "--db-no-position-history",
+            action="store_true",
+            help="Do not record position history (only keep latest position per node)",
+        )
+        db_group.add_argument(
+            "--db-no-telemetry-history",
+            action="store_true",
+            help="Do not record telemetry history (only keep latest telemetry per node)",
+        )
+        # --- END ADDED ---
+
         return parser

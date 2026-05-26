@@ -1,5 +1,5 @@
 # Meshtastic MQTT Monitor - Example Configuration File
-# 
+#
 # This file demonstrates all available configuration options for the
 # Meshtastic MQTT Monitor application. Copy this file to config.yaml
 # and customize it for your needs.
@@ -14,26 +14,26 @@ mqtt:
   # MQTT broker hostname or IP address
   # Default: mqtt.villagesmesh.com (public Meshtastic MQTT server)
   host: "mqtt.villagesmesh.com"
-  
+
   # MQTT broker port
   # Default: 1883 (standard MQTT), 8883 (MQTT over TLS)
   port: 1883
-  
+
   # MQTT username for authentication
   # Default: meshdev (public server username)
   # Set to null if no authentication is required
   username: "meshdev"
-  
+
   # MQTT password for authentication
   # Default: large4cats (public server password)
   # Set to null if no authentication is required
   password: "large4cats"
-  
+
   # Enable TLS/SSL encryption for MQTT connection
   # Default: false
   # Set to true when connecting to port 8883 or when broker requires TLS
   use_tls: false
-  
+
   # Path to custom CA certificate file for TLS verification
   # Default: null (uses system CA certificates)
   # Only needed if broker uses self-signed certificate
@@ -50,13 +50,46 @@ monitoring:
   #   - "msh/+/+/+/#"            - All messages from all regions
   #   - "msh/US/2/e/LongFast/#"  - Only LongFast channel messages
   topic: "msh/US/2/e/#"
-  
+
   # Filter to specific channels (optional)
   # Set to null to monitor all channels, or provide a list of channel names
   # Examples:
   #   - null                     - Monitor all channels
   #   - ["LongFast", "Primary"]  - Only monitor these channels
   channels: null
+
+# ============================================================================
+# Node Database Configuration
+# ============================================================================
+#
+# When enabled, the monitor builds and maintains a SQLite database of every
+# node it hears. Node info, GPS position, and telemetry are upserted on each
+# relevant packet so the database always reflects the latest known state.
+# History tables capture a full time-series of position and telemetry updates.
+#
+# The database file is created automatically on first run. You can query it
+# with any SQLite tool (e.g. DB Browser for SQLite) while the monitor is live.
+# Use import_nodes.py to pre-seed it from a directly connected Meshtastic node.
+
+database:
+  # Set to true to enable the node database feature
+  # Default: false
+  enabled: false
+
+  # Path to the SQLite database file
+  # Can be absolute or relative to the directory you run the monitor from
+  # Default: nodes.db (created in the current working directory)
+  path: "nodes.db"
+
+  # Keep a full time-series of every position packet received per node.
+  # Disable to reduce disk usage if you only care about the latest position.
+  # Default: true
+  keep_position_history: true
+
+  # Keep a full time-series of every telemetry packet received per node.
+  # Disable to reduce disk usage if you only care about the latest telemetry.
+  # Default: true
+  keep_telemetry_history: true
 
 # ============================================================================
 # Encryption Configuration
@@ -68,15 +101,15 @@ encryption:
     # Example: Default LongFast channel (typically unencrypted or uses default key)
     - name: "LongFast"
       key: "AQ=="  # Base64 encoded key (this is the default key)
-    
+
     # Example: Custom encrypted channel
     - name: "Primary"
       key: "1PG7OiApB3XvvX7g8kYzDYQD+CW+3Oi+Qs/LoIWh/gg="
-    
+
     # Example: Another custom channel
     - name: "SecureChannel"
       key: "YourBase64EncodedKeyHere=="
-    
+
     # Add more channels as needed
     # To get your channel's encryption key:
     # 1. Use the Meshtastic app or CLI
@@ -97,7 +130,7 @@ display:
       - altitude
       - timestamp
       # Other available fields: precision_bits, ground_speed, ground_track
-    
+
     # Text message packets
     TEXT_MESSAGE_APP:
       - from
@@ -105,7 +138,7 @@ display:
       - text
       - timestamp
       # Other available fields: channel, hop_limit
-    
+
     # Device telemetry packets
     TELEMETRY_APP:
       - battery_level
@@ -113,7 +146,7 @@ display:
       - temperature
       - timestamp
       # Other available fields: channel_utilization, air_util_tx, uptime_seconds
-    
+
     # Node information packets
     NODEINFO_APP:
       - node_id
@@ -121,20 +154,20 @@ display:
       - short_name
       - hardware_model
       # Other available fields: firmware_version, region, role
-    
+
     # Routing packets (mesh routing information)
     ROUTING_APP:
       - from
       - to
       - hop_limit
       - timestamp
-    
+
     # Admin packets (device configuration)
     ADMIN_APP:
       - from
       - to
       - timestamp
-    
+
     # Add custom field configurations for other packet types as needed
     # Available packet types include:
     # - WAYPOINT_APP
@@ -171,7 +204,7 @@ colors:
     STORE_FORWARD_APP: "magenta"
     # Default color for unknown packet types
     default: "white"
-  
+
   # Keyword highlighting
   # Highlight specific keywords in message content with custom colors
   # Useful for monitoring specific events, alerts, or important terms
@@ -180,27 +213,27 @@ colors:
     - keyword: "emergency"
       case_sensitive: false
       color: "red_bold"
-    
+
     # Example: Highlight alert terms in bold yellow
     - keyword: "alert"
       case_sensitive: false
       color: "yellow_bold"
-    
+
     # Example: Highlight help requests in bold magenta
     - keyword: "help"
       case_sensitive: false
       color: "magenta_bold"
-    
+
     # Example: Case-sensitive keyword matching
     - keyword: "URGENT"
       case_sensitive: true
       color: "red_bold"
-    
+
     # Example: Highlight specific node names or callsigns
     - keyword: "BaseStation"
       case_sensitive: false
       color: "cyan_bold"
-    
+
     # Add more keyword highlights as needed
     # Common use cases:
     # - Emergency keywords: "sos", "mayday", "emergency"
@@ -243,7 +276,14 @@ colors:
 #    - Use case_sensitive: true for specific terms (e.g., "URGENT")
 #    - Bold colors help keywords stand out
 #
-# 7. Command-Line Overrides:
+# 7. Node Database:
+#    - Set database.enabled: true (or use --db-enable) to activate
+#    - Disable history tables with keep_position_history/keep_telemetry_history
+#      to reduce disk usage if you only need the latest state per node
+#    - Use import_nodes.py to pre-seed the database from a connected node
+#    - The SQLite file can be read by any SQLite tool while the monitor runs
+#
+# 8. Command-Line Overrides:
 #    - All settings can be overridden via command-line arguments
 #    - Useful for testing without modifying config file
 #    - See --help for all available options
