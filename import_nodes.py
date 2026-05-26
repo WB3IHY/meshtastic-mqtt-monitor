@@ -3,9 +3,9 @@
 Import node database from a live Meshtastic node into nodes.db.
 
 Usage:
-    python import_nodes.py --host 192.168.200.2
+    python import_nodes.py --host meshtastic.local
     python import_nodes.py --port /dev/ttyUSB0
-    python import_nodes.py --host 192.168.200.2 --db /path/to/nodes.db
+    python import_nodes.py --host meshtastic.local --db /path/to/nodes.db
 """
 
 import argparse
