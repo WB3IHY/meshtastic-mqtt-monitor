@@ -10,7 +10,7 @@ from src.config import MonitorConfig
 from src.decoder import MessageDecoder
 from src.formatter import OutputFormatter
 from src.mqtt_client import MQTTClient
-from src.node_database import NodeDatabase  # --- ADDED ---
+from src.node_database import NodeDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class MeshtasticMonitor:
         self.mqtt_client: Optional[MQTTClient] = None
         self.decoder: Optional[MessageDecoder] = None
         self.formatter: Optional[OutputFormatter] = None
-        self.node_db: Optional[NodeDatabase] = None  # --- ADDED ---
+        self.node_db: Optional[NodeDatabase] = None
         self._running = False
 
         # Set up signal handlers for graceful shutdown
@@ -58,8 +58,6 @@ class MeshtasticMonitor:
             logger.info("Initializing message decoder...")
             self.decoder = MessageDecoder(self.config.channel_keys)
 
-            # --- ADDED: Initialize node database before formatter so names
-            #            can be resolved during output ---
             db_config = getattr(self.config, "database", None)
             if db_config and getattr(db_config, "enabled", False):
                 db_path = getattr(db_config, "path", "nodes.db")
@@ -74,7 +72,6 @@ class MeshtasticMonitor:
                 print(f"Node database enabled: {db_path}")
             else:
                 logger.info("Node database disabled (not configured or enabled: false)")
-            # --- END ADDED ---
 
             # Initialize formatter (pass node_db so From/To labels show names)
             logger.info("Initializing output formatter...")
@@ -83,7 +80,7 @@ class MeshtasticMonitor:
                 self.config.display_fields,
                 self.config.keywords,
                 self.config.hardware_models,
-                self.node_db,  # --- ADDED ---
+                self.node_db,
             )
 
             # Initialize MQTT client
@@ -150,11 +147,9 @@ class MeshtasticMonitor:
             logger.info("Disconnecting from MQTT broker...")
             self.mqtt_client.disconnect()
 
-        # --- ADDED: Close node database ---
         if self.node_db:
             logger.info("Closing node database...")
             self.node_db.close()
-        # --- END ADDED ---
 
         logger.info("Monitor stopped")
         print("Monitor stopped successfully.")
@@ -173,10 +168,8 @@ class MeshtasticMonitor:
             # Decode the message
             decoded_message = self.decoder.decode(topic, payload)
 
-            # --- ADDED: Update node database from decoded message ---
             if self.node_db:
                 self._update_node_database(decoded_message)
-            # --- END ADDED ---
 
             # Hide decode errors if configured
             if self.config.hide_decode_errors and decoded_message.packet_type == "DECODE_ERROR":
@@ -203,7 +196,6 @@ class MeshtasticMonitor:
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
 
-    # --- ADDED: Node database update helper ---
     def _update_node_database(self, decoded_message) -> None:
         """
         Extract node data from a decoded message and persist it to the database.
@@ -246,7 +238,6 @@ class MeshtasticMonitor:
 
         except Exception as e:
             logger.warning(f"Failed to update node database: {e}", exc_info=True)
-    # --- END ADDED ---
 
     def _display_startup_info(self) -> None:
         """Display startup information including version and configuration."""
@@ -277,14 +268,12 @@ class MeshtasticMonitor:
         if self.config.filter_text:
             print(f"Filter: Only showing messages containing '{self.config.filter_text}'")
 
-        # --- ADDED: Show database status in startup banner ---
         db_config = getattr(self.config, "database", None)
         if db_config and getattr(db_config, "enabled", False):
             db_path = getattr(db_config, "path", "nodes.db")
             print(f"Node Database: Enabled ({db_path})")
         else:
             print("Node Database: Disabled")
-        # --- END ADDED ---
 
         print("=" * 80 + "\n")
 

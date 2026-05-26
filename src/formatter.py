@@ -6,11 +6,9 @@ from typing import Dict, List, Optional
 
 from src.config import ColorConfig, KeywordConfig
 from src.decoder import DecodedMessage
-# --- ADDED ---
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.node_database import NodeDatabase
-# --- END ADDED ---
 
 
 class ANSIColors:
@@ -104,7 +102,7 @@ class OutputFormatter:
         display_fields: Dict[str, List[str]],
         keywords: List[KeywordConfig],
         hardware_models: Optional[Dict[int, str]] = None,
-        node_db: Optional["NodeDatabase"] = None,  # --- ADDED ---
+        node_db: Optional["NodeDatabase"] = None,
     ):
         """
         Initialize output formatter.
@@ -121,9 +119,8 @@ class OutputFormatter:
         self.display_fields = display_fields
         self.keywords = keywords
         self.hardware_models = hardware_models or {}
-        self.node_db = node_db  # --- ADDED ---
+        self.node_db = node_db
 
-    # --- ADDED ---
     def _resolve_node_name(self, node_id: str) -> str:
         """
         Look up a node_id in the database and return a human-readable label.
@@ -163,7 +160,6 @@ class OutputFormatter:
         except Exception:
             # Never let a DB error break message display
             return node_id
-    # --- END ADDED ---
 
     def format_message(self, message: DecodedMessage) -> str:
         """
@@ -184,12 +180,10 @@ class OutputFormatter:
         # Format basic info
         channel_str = f"Channel: {message.channel}"
 
-        # --- MODIFIED: resolve node IDs to names when available ---
         from_label = self._resolve_node_name(message.from_node)
         to_label   = self._resolve_node_name(message.to_node)
         from_str = f"From: {from_label}"
         to_str   = f"To: {to_label}"
-        # --- END MODIFIED ---
 
         # Format fields based on packet type
         fields_str = self._format_fields(message.fields, message.packet_type)

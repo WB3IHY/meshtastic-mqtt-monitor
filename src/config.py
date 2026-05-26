@@ -141,7 +141,6 @@ class KeywordConfig:
     color: str = "white"
 
 
-# --- ADDED ---
 @dataclass
 class DatabaseConfig:
     """Node database configuration."""
@@ -150,7 +149,6 @@ class DatabaseConfig:
     path: str = "nodes.db"
     keep_position_history: bool = True
     keep_telemetry_history: bool = True
-# --- END ADDED ---
 
 
 @dataclass
@@ -168,7 +166,7 @@ class MonitorConfig:
     filter_type: Optional[str] = None       # Filter to specific packet type
     filter_text: Optional[str] = None       # Filter messages containing text (grep-like)
     hide_decode_errors: bool = False        # Hide messages that failed to decode
-    database: DatabaseConfig = field(default_factory=DatabaseConfig)  # --- ADDED ---
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
 
 
 class ConfigManager:
@@ -252,9 +250,7 @@ class ConfigManager:
             "LongFast": "AQ==",  # Default Meshtastic encryption key
         }
 
-        # --- ADDED: default database config (disabled by default) ---
         config.database = DatabaseConfig()
-        # --- END ADDED ---
 
         return config
 
@@ -352,7 +348,6 @@ class ConfigManager:
             keyword_highlights=keyword_highlights,
         )
 
-        # --- ADDED: Parse database configuration ---
         db_data = config_data.get("database", {})
         database_config = DatabaseConfig(
             enabled=db_data.get("enabled", False),
@@ -360,7 +355,6 @@ class ConfigManager:
             keep_position_history=db_data.get("keep_position_history", True),
             keep_telemetry_history=db_data.get("keep_telemetry_history", True),
         )
-        # --- END ADDED ---
 
         # Create and return MonitorConfig
         config = MonitorConfig(
@@ -371,7 +365,7 @@ class ConfigManager:
             display_fields=display_fields,
             colors=color_config,
             keywords=keywords,
-            database=database_config,  # --- ADDED ---
+            database=database_config,
         )
 
         # Apply defaults for missing display fields
@@ -404,14 +398,12 @@ class ConfigManager:
                 "topic": config.topic,
                 "channels": config.channels,
             },
-            # --- ADDED: persist database config ---
             "database": {
                 "enabled": config.database.enabled,
                 "path": config.database.path,
                 "keep_position_history": config.database.keep_position_history,
                 "keep_telemetry_history": config.database.keep_telemetry_history,
             },
-            # --- END ADDED ---
             "encryption": {
                 "channels": [
                     {"name": name, "key": key}
@@ -467,11 +459,9 @@ class ConfigManager:
             if key and not isinstance(key, str):
                 raise ValueError(f"Invalid encryption key for channel {channel_name}")
 
-        # --- ADDED: Validate database configuration ---
         if config.database.enabled:
             if not config.database.path:
                 raise ValueError("Database path cannot be empty when database is enabled")
-        # --- END ADDED ---
 
         return True
 
@@ -556,7 +546,6 @@ class ConfigManager:
         if hasattr(args, "hide_decode_errors") and args.hide_decode_errors:
             config.hide_decode_errors = args.hide_decode_errors
 
-        # --- ADDED: Override database settings from CLI ---
         if hasattr(args, "db_enable") and args.db_enable:
             config.database.enabled = True
         if hasattr(args, "db_path") and args.db_path:
@@ -567,7 +556,6 @@ class ConfigManager:
             config.database.keep_position_history = False
         if hasattr(args, "db_no_telemetry_history") and args.db_no_telemetry_history:
             config.database.keep_telemetry_history = False
-        # --- END ADDED ---
 
         return config
 
@@ -754,7 +742,6 @@ Examples:
             help="Hide messages that failed to decode (reduces noise from malformed packets)",
         )
 
-        # --- ADDED: Node database options ---
         db_group = parser.add_argument_group("Node Database")
         db_group.add_argument(
             "--db-enable",
@@ -777,6 +764,5 @@ Examples:
             action="store_true",
             help="Do not record telemetry history (only keep latest telemetry per node)",
         )
-        # --- END ADDED ---
 
         return parser
