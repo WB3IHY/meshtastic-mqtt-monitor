@@ -152,6 +152,16 @@ class DatabaseConfig:
 
 
 @dataclass
+class LogConfig:
+    """Activity log configuration."""
+
+    enabled: bool = False
+    path: str = "activity.log"
+    replay_lines: int = 50
+    max_size_mb: int = 10
+
+
+@dataclass
 class MonitorConfig:
     """Complete monitor application configuration."""
 
@@ -167,6 +177,7 @@ class MonitorConfig:
     filter_text: Optional[str] = None       # Filter messages containing text (grep-like)
     hide_decode_errors: bool = False        # Hide messages that failed to decode
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
+    log: LogConfig = field(default_factory=LogConfig)
 
 
 class ConfigManager:
@@ -251,6 +262,7 @@ class ConfigManager:
         }
 
         config.database = DatabaseConfig()
+        config.log = LogConfig()
 
         return config
 
@@ -356,6 +368,14 @@ class ConfigManager:
             keep_telemetry_history=db_data.get("keep_telemetry_history", True),
         )
 
+        log_data = config_data.get("log", {})
+        log_config = LogConfig(
+            enabled=log_data.get("enabled", False),
+            path=log_data.get("path", "activity.log"),
+            replay_lines=log_data.get("replay_lines", 50),
+            max_size_mb=log_data.get("max_size_mb", 10),
+        )
+
         # Create and return MonitorConfig
         config = MonitorConfig(
             mqtt=mqtt_config,
@@ -366,6 +386,7 @@ class ConfigManager:
             colors=color_config,
             keywords=keywords,
             database=database_config,
+            log=log_config,
         )
 
         # Apply defaults for missing display fields
@@ -403,6 +424,12 @@ class ConfigManager:
                 "path": config.database.path,
                 "keep_position_history": config.database.keep_position_history,
                 "keep_telemetry_history": config.database.keep_telemetry_history,
+            },
+            "log": {
+                "enabled": config.log.enabled,
+                "path": config.log.path,
+                "replay_lines": config.log.replay_lines,
+                "max_size_mb": config.log.max_size_mb,
             },
             "encryption": {
                 "channels": [
@@ -556,6 +583,16 @@ class ConfigManager:
             config.database.keep_position_history = False
         if hasattr(args, "db_no_telemetry_history") and args.db_no_telemetry_history:
             config.database.keep_telemetry_history = False
+
+        if hasattr(args, "log_enable") and args.log_enable:
+            config.log.enabled = True
+        if hasattr(args, "log_file") and args.log_file:
+            config.log.path = args.log_file
+            config.log.enabled = True
+        if hasattr(args, "log_replay_lines") and args.log_replay_lines is not None:
+            config.log.replay_lines = args.log_replay_lines
+        if hasattr(args, "log_max_size") and args.log_max_size is not None:
+            config.log.max_size_mb = args.log_max_size
 
         return config
 
@@ -763,6 +800,31 @@ Examples:
             "--db-no-telemetry-history",
             action="store_true",
             help="Do not record telemetry history (only keep latest telemetry per node)",
+        )
+
+        log_group = parser.add_argument_group("Activity Logging")
+        log_group.add_argument(
+            "--log-enable",
+            action="store_true",
+            help="Enable activity logging to file",
+        )
+        log_group.add_argument(
+            "--log-file",
+            type=str,
+            metavar="PATH",
+            help="Path to activity log file (also enables logging, default: activity.log)",
+        )
+        log_group.add_argument(
+            "--log-replay-lines",
+            type=int,
+            metavar="N",
+            help="Number of recent log lines to replay on startup (0 to disable, default: 50)",
+        )
+        log_group.add_argument(
+            "--log-max-size",
+            type=int,
+            metavar="MB",
+            help="Maximum log file size in MB before rotation (default: 10)",
         )
 
         return parser

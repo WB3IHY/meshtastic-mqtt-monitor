@@ -1,9 +1,11 @@
 """Main monitor application for Meshtastic MQTT Monitor."""
 
 import logging
+import os
 import signal
 import sys
-from typing import Optional
+from datetime import datetime
+from typing import IO, Optional
 
 from src import __version__
 from src.config import MonitorConfig
@@ -36,6 +38,8 @@ class MeshtasticMonitor:
         self.formatter: Optional[OutputFormatter] = None
         self.node_db: Optional[NodeDatabase] = None
         self._running = False
+        self._log_file: Optional[IO[str]] = None
+        self._log_max_bytes: int = self.config.log.max_size_mb * 1024 * 1024
 
         # Set up signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -54,6 +58,11 @@ class MeshtasticMonitor:
         self._display_startup_info()
 
         try:
+            # Open activity log and replay history if configured
+            if self.config.log.enabled:
+                self._open_log()
+                self._replay_log()
+
             # Initialize decoder
             logger.info("Initializing message decoder...")
             self.decoder = MessageDecoder(self.config.channel_keys)
@@ -151,6 +160,15 @@ class MeshtasticMonitor:
             logger.info("Closing node database...")
             self.node_db.close()
 
+        if self._log_file:
+            logger.info("Closing activity log...")
+            try:
+                self._log_file.flush()
+                self._log_file.close()
+            except Exception:
+                pass
+            self._log_file = None
+
         logger.info("Monitor stopped")
         print("Monitor stopped successfully.")
 
@@ -192,6 +210,7 @@ class MeshtasticMonitor:
 
             # Display the formatted message
             print(formatted_output)
+            self._write_to_log(formatted_output)
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
@@ -242,6 +261,86 @@ class MeshtasticMonitor:
         except Exception as e:
             logger.warning(f"Failed to update node database: {e}", exc_info=True)
 
+    def _open_log(self) -> None:
+        """Open the activity log file for appending."""
+        try:
+            self._log_file = open(self.config.log.path, "a", encoding="utf-8")
+            logger.info(f"Activity log opened: {self.config.log.path}")
+        except Exception as e:
+            logger.warning(f"Could not open activity log {self.config.log.path}: {e}")
+            self._log_file = None
+
+    def _rotate_log(self) -> None:
+        """Rotate the activity log: rename current to .1, open a fresh file."""
+        try:
+            if self._log_file:
+                self._log_file.flush()
+                self._log_file.close()
+                self._log_file = None
+            backup = self.config.log.path + ".1"
+            if os.path.exists(backup):
+                os.remove(backup)
+            os.rename(self.config.log.path, backup)
+            self._log_file = open(self.config.log.path, "a", encoding="utf-8")
+            logger.info(f"Activity log rotated (backup: {backup})")
+        except Exception as e:
+            logger.warning(f"Log rotation failed: {e}")
+
+    def _write_to_log(self, line: str) -> None:
+        """Write a timestamped line to the activity log, rotating if needed."""
+        if not self._log_file:
+            return
+        try:
+            if os.path.exists(self.config.log.path):
+                if os.path.getsize(self.config.log.path) >= self._log_max_bytes:
+                    self._rotate_log()
+            if self._log_file:
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self._log_file.write(f"{timestamp} | {line}\n")
+                self._log_file.flush()
+        except Exception as e:
+            logger.warning(f"Failed to write to activity log: {e}")
+
+    def _replay_log(self) -> None:
+        """Print the last N lines of the activity log to the terminal on startup."""
+        n = self.config.log.replay_lines
+        if n <= 0 or not os.path.exists(self.config.log.path):
+            return
+        try:
+            lines = self._tail_log(self.config.log.path, n)
+            if not lines:
+                return
+            print("=" * 80)
+            print(f"--- Replaying last {len(lines)} lines from activity log ---")
+            print("=" * 80)
+            for line in lines:
+                print(line)
+            print("=" * 80)
+            print("--- End of replay ---")
+            print("=" * 80 + "\n")
+        except Exception as e:
+            logger.warning(f"Could not replay activity log: {e}")
+
+    @staticmethod
+    def _tail_log(path: str, n: int) -> list:
+        """Return the last n non-empty lines from a file efficiently."""
+        chunk_size = 8192
+        lines = []
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            remaining = f.tell()
+            if remaining == 0:
+                return []
+            buf = b""
+            while remaining > 0 and len(lines) <= n:
+                chunk = min(chunk_size, remaining)
+                remaining -= chunk
+                f.seek(remaining)
+                buf = f.read(chunk) + buf
+                lines = buf.split(b"\n")
+        decoded = [l.decode("utf-8", errors="replace") for l in lines if l.strip()]
+        return decoded[-n:]
+
     def _display_startup_info(self) -> None:
         """Display startup information including version and configuration."""
         print("\n" + "=" * 80)
@@ -277,6 +376,16 @@ class MeshtasticMonitor:
             print(f"Node Database: Enabled ({db_path})")
         else:
             print("Node Database: Disabled")
+
+        log_config = getattr(self.config, "log", None)
+        if log_config and getattr(log_config, "enabled", False):
+            print(
+                f"Activity Log: Enabled ({log_config.path}, "
+                f"max {log_config.max_size_mb} MB, "
+                f"replay {log_config.replay_lines} lines)"
+            )
+        else:
+            print("Activity Log: Disabled")
 
         print("=" * 80 + "\n")
 
