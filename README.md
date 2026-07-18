@@ -12,6 +12,7 @@ A Python-based command-line tool for monitoring, decoding, and displaying Meshta
 - **Keyword Highlighting**: Highlight specific keywords in messages with custom colors
 - **Flexible Configuration**: YAML configuration file with command-line overrides
 - **Multiple Packet Types**: Support for Position, Text Messages, Telemetry, Node Info, and more
+- **Node Database**: Builds and maintains a SQLite database of observed nodes, with full position and telemetry history
 
 ## Example Output
 
@@ -137,6 +138,15 @@ meshtastic-monitor [OPTIONS]
 --channels CHANNELS    Comma-separated list of channels to monitor
 ```
 
+#### Node Database Options
+
+```
+--db-enable                Enable the node database
+--db-path PATH             Path to the SQLite database file (also enables the database)
+--db-no-position-history   Do not record position history (keep latest position only)
+--db-no-telemetry-history  Do not record telemetry history (keep latest telemetry only)
+```
+
 ### Examples
 
 #### Example 1: Monitor Public Meshtastic Server
@@ -199,6 +209,12 @@ mqtt:
 monitoring:
   topic: "msh/US/2/e/#"
   channels: null  # null = all channels
+
+database:
+  enabled: false
+  path: "nodes.db"
+  keep_position_history: true
+  keep_telemetry_history: true
 
 encryption:
   channels:
@@ -287,6 +303,29 @@ colors:
     - keyword: "emergency"
       color: "red_bold"
 ```
+
+### Node Database
+
+The monitor can build and maintain a SQLite database of every node it observes. Node info, GPS position, and device telemetry are upserted on each relevant packet so the database always reflects the latest known state. History tables capture a full time-series of position and telemetry updates.
+
+Enable via `config.yaml`:
+
+```yaml
+database:
+  enabled: true                 # set to true to activate
+  path: "nodes.db"              # path to SQLite file (created automatically)
+  keep_position_history: true   # false = only keep latest position per node
+  keep_telemetry_history: true  # false = only keep latest telemetry per node
+```
+
+Or via command-line:
+
+```bash
+meshtastic-monitor --db-enable
+meshtastic-monitor --db-path /var/lib/mesh/nodes.db
+```
+
+The database file can be queried with any SQLite tool (e.g. DB Browser for SQLite) while the monitor is running. Use `import_nodes.py` to pre-seed the database from a directly connected Meshtastic node before starting the monitor.
 
 ## Output Format
 
