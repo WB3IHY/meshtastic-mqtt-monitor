@@ -92,6 +92,37 @@ database:
   keep_telemetry_history: true
 
 # ============================================================================
+# Activity Log Configuration
+# ============================================================================
+#
+# When enabled, the monitor appends every decoded packet line to a log file,
+# preserving ANSI color codes so replayed output looks identical to live output.
+# On startup, the last replay_lines lines are printed to the terminal before
+# live traffic begins, so recent history is immediately visible on rerun.
+#
+# The log rotates automatically when it reaches max_size_mb. One backup is kept
+# (<path>.1), so maximum disk use is 2 × max_size_mb.
+
+log:
+  # Set to true to enable activity logging
+  # Default: false
+  enabled: false
+
+  # Path to the log file (absolute or relative to the working directory)
+  # Default: activity.log
+  path: "activity.log"
+
+  # Number of recent log lines to replay to the terminal on startup
+  # Set to 0 to disable replay while still keeping the log
+  # Default: 50
+  replay_lines: 50
+
+  # Maximum log file size in megabytes before rotation
+  # When reached, the current log is renamed to <path>.1 and a fresh log starts
+  # Default: 10
+  max_size_mb: 10
+
+# ============================================================================
 # Encryption Configuration
 # ============================================================================
 # Configure encryption keys for channels that use encryption
@@ -283,7 +314,14 @@ colors:
 #    - Use import_nodes.py to pre-seed the database from a connected node
 #    - The SQLite file can be read by any SQLite tool while the monitor runs
 #
-# 8. Command-Line Overrides:
+# 8. Activity Logging:
+#    - Set log.enabled: true (or use --log-enable) to activate
+#    - Use --log-file PATH to enable logging and set the path in one step
+#    - Replay is shown between separator lines at startup, before live traffic
+#    - Set replay_lines: 0 to skip replay while still keeping the log file
+#    - The log rotates at max_size_mb; one backup (.1) is kept automatically
+#
+# 9. Command-Line Overrides:
 #    - All settings can be overridden via command-line arguments
 #    - Useful for testing without modifying config file
 #    - See --help for all available options
