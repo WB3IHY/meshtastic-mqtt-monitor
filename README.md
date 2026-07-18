@@ -13,6 +13,7 @@ A Python-based command-line tool for monitoring, decoding, and displaying Meshta
 - **Flexible Configuration**: YAML configuration file with command-line overrides
 - **Multiple Packet Types**: Support for Position, Text Messages, Telemetry, Node Info, and more
 - **Node Database**: Builds and maintains a SQLite database of observed nodes, with full position and telemetry history
+- **Activity Logging**: Logs all packet activity to a file with timestamps and optional startup replay of recent history
 
 ## Example Output
 
@@ -147,6 +148,15 @@ meshtastic-monitor [OPTIONS]
 --db-no-telemetry-history  Do not record telemetry history (keep latest telemetry only)
 ```
 
+#### Activity Logging Options
+
+```
+--log-enable               Enable activity logging to file
+--log-file PATH            Path to activity log file (also enables logging)
+--log-replay-lines N       Lines of log history to replay on startup (default: 50)
+--log-max-size MB          Maximum log file size in MB before rotation (default: 10)
+```
+
 ### Examples
 
 #### Example 1: Monitor Public Meshtastic Server
@@ -215,6 +225,12 @@ database:
   path: "nodes.db"
   keep_position_history: true
   keep_telemetry_history: true
+
+log:
+  enabled: false
+  path: "activity.log"
+  replay_lines: 50
+  max_size_mb: 10
 
 encryption:
   channels:
@@ -326,6 +342,35 @@ meshtastic-monitor --db-path /var/lib/mesh/nodes.db
 ```
 
 The database file can be queried with any SQLite tool (e.g. DB Browser for SQLite) while the monitor is running. Use `import_nodes.py` to pre-seed the database from a directly connected Meshtastic node before starting the monitor.
+
+### Activity Logging
+
+The monitor can append every decoded packet line to a log file, preserving ANSI color codes so replayed output looks identical to live output. On restart, the last N lines from the log are printed to the terminal before live traffic begins.
+
+Enable via `config.yaml`:
+
+```yaml
+log:
+  enabled: true          # set to true to activate
+  path: "activity.log"  # path to log file (created automatically)
+  replay_lines: 50       # lines of history to show on startup (0 to disable)
+  max_size_mb: 10        # rotate when file reaches this size
+```
+
+Or via command-line:
+
+```bash
+# Enable with default settings
+meshtastic-monitor --log-enable
+
+# Enable and set log path in one step
+meshtastic-monitor --log-file /path/to/activity.log
+
+# Adjust replay length and rotation threshold
+meshtastic-monitor --log-enable --log-replay-lines 100 --log-max-size 25
+```
+
+The log rotates automatically when it reaches `max_size_mb`. One backup is kept (`activity.log.1`), so maximum disk use is 2 × `max_size_mb`. Set `replay_lines: 0` to keep the log without replaying history on startup.
 
 ## Output Format
 
