@@ -211,16 +211,19 @@ class MeshtasticMonitor:
             fields = decoded_message.fields or {}
             packet_type = decoded_message.packet_type
 
-            # Resolve node_id: prefer explicit node_id field, fall back to from/from_id
+            # Resolve node_id: prefer explicit node_id/from/sender fields (set on
+            # JSON-decoded messages), fall back to the packet's own from_node
+            # (the authoritative sender for protobuf-decoded packets such as
+            # POSITION and TELEMETRY_APP).
             node_id = (
                 fields.get("node_id")
                 or fields.get("from")
-                or getattr(decoded_message, "from_id", None)
-                or getattr(decoded_message, "sender", None)
+                or fields.get("sender")
+                or decoded_message.from_node
             )
 
-            if not node_id:
-                return  # Can't persist without a node identifier
+            if not node_id or node_id == "unknown":
+                return  # Can't persist without a known node identifier
 
             if packet_type == "NODEINFO_APP":
                 self.node_db.upsert_node_info(node_id, fields)
